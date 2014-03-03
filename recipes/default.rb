@@ -17,42 +17,64 @@
 # limitations under the License.
 #
 
-case node[:platform]
-when "ubuntu", "debian"
-  package "ganglia-monitor"
-when "redhat", "centos", "fedora"
-  include_recipe "ganglia::source"
+include_recipe "ganglia::source"
 
-  execute "copy ganglia-monitor init script" do
-    command "cp " +
-      "/usr/src/ganglia-#{node[:ganglia][:version]}/gmond/gmond.init " +
-      "/etc/init.d/ganglia-monitor"
-    not_if "test -f /etc/init.d/ganglia-monitor"
-  end
-
-  user "ganglia"
+template "/etc/init.d/ganglia-monitor" do
+  source "gmond.init.erb"
+  mode 0744
 end
+
+user "ganglia"
 
 directory "/etc/ganglia"
 
-case node[:ganglia][:unicast]
-when true
-  host = search(:node, "role:#{node['ganglia']['server_role']} AND chef_environment:#{node.chef_environment}").map {|node| node.ipaddress}
-  if host.empty? 
-     host = "127.0.0.1"
-  end
-  template "/etc/ganglia/gmond.conf" do
-    source "gmond_unicast.conf.erb"
-    variables( :cluster_name => node[:ganglia][:cluster_name],
-               :host => host )
-    notifies :restart, "service[ganglia-monitor]"
-  end
-when false
-  template "/etc/ganglia/gmond.conf" do
-    source "gmond.conf.erb"
-    variables( :cluster_name => node[:ganglia][:cluster_name] )
-    notifies :restart, "service[ganglia-monitor]"
-  end
+ganglia_cluster = node[:ganglia][:gmond][:cluster_name]
+gmond_receivers = []
+
+search(:node, "recipes:ganglia AND ganglia_gmond_receiver:true AND ganglia_gmond_cluster_name:\"#{ganglia_cluster}\" AND chef_environment:#{node.chef_environment}").each do |node|
+  gmond_receivers << node[:ipaddress]
+end
+
+gmond_receivers.each do |ip|
+  log "Receiver #{ip}"
+end
+
+template "/etc/ganglia/gmond.conf" do
+  source "gmond.conf.erb"
+  variables(
+    :cluster_name => node[:ganglia][:gmond][:cluster_name],
+    :cluster_owner => node[:ganglia][:gmond][:cluster_owner],
+    :node_name => node.name,
+    :node_ip => node[:ipaddress],
+
+    :mute => node[:ganglia][:gmond][:mute],
+    :deaf => node[:ganglia][:gmond][:deaf],
+    :user => "ganglia",
+
+    :hosts => gmond_receivers,
+    :send_port => node[:ganglia][:gmond][:send_port],
+    :recv_port => node[:ganglia][:gmond][:recv_port],
+    :accept_port => node[:ganglia][:gmond][:accept_port],
+
+    :receiver => node[:ganglia][:gmond][:receiver]
+  )
+
+  owner "ganglia"
+
+  notifies :restart, "service[ganglia-monitor]"
+end
+
+directory "/usr/lib/ganglia"
+
+bash "install_ganglia_libs" do
+  cwd node[:ganglia][:install_dir]
+  creates "/usr/lib/ganglia/modnet.so"
+  code <<-EOH
+      cp gmond/modules/*/.libs/*.so /usr/lib/ganglia/
+      chmod ug+rwx /usr/lib/ganglia/*.so
+    EOH
+
+  notifies :restart, "service[ganglia-monitor]"
 end
 
 service "ganglia-monitor" do

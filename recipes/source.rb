@@ -1,45 +1,39 @@
-if platform?( "redhat", "centos", "fedora" )
-  package "apr-devel"
-  package "libconfuse-devel"
-  package "expat-devel"
-  package "rrdtool-devel"
+#
+# Cookbook Name:: ganglia
+# Recipe:: source
+#
+# Copyright 2011, Heavy Water Software Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+%w{ libtool libapr1-dev libconfuse-dev libexpat1-dev librrd-dev libpcre3-dev }.each do |name|
+  package name
 end
 
-remote_file "/usr/src/ganglia-#{node[:ganglia][:version]}.tar.gz" do
-  source node[:ganglia][:uri]
-  checksum node[:ganglia][:checksum]
+git node[:ganglia][:install_dir] do
+  repository node[:ganglia][:repo]
+  revision node[:ganglia][:version]
+  enable_submodules true
+
+  action :checkout
+  notifies :run, "bash[compile_ganglia_src]"
 end
 
-src_path = "/usr/src/ganglia-#{node[:ganglia][:version]}"
-
-execute "untar ganglia" do
-  command "tar xzf ganglia-#{node[:ganglia][:version]}.tar.gz"
-  creates src_path
-  cwd "/usr/src"
-end
-
-execute "configure ganglia build" do
-  command "./configure --with-gmetad --with-libpcre=no --sysconfdir=/etc/ganglia"
-  creates "#{src_path}/config.log"
-  cwd src_path
-end
-
-execute "build ganglia" do
-  command "make"
-  creates "#{src_path}/gmond/gmond"
-  cwd src_path
-end
-
-execute "install ganglia" do
-  command "make install"
-  creates "/usr/sbin/gmond"
-  cwd src_path
-end
-
-link "/usr/lib/ganglia" do
-  to "/usr/lib64/ganglia"
-  only_if do
-    node[:kernel][:machine] == "x86_64" and
-      platform?( "redhat", "centos", "fedora" )
-  end
+bash "compile_ganglia_src" do
+  cwd node[:ganglia][:install_dir]
+  creates "/usr/local/sbin/gmond"
+  code <<-EOH
+      ./bootstrap && ./configure --with-gmetad --sysconfdir=/etc/ganglia && make && make install
+    EOH
 end
