@@ -68,7 +68,7 @@ directory "/usr/lib/ganglia"
 
 bash "install_ganglia_libs" do
   cwd node[:ganglia][:install_dir]
-  creates "/usr/lib/ganglia/modnet.so"
+  not_if { File.exists?("/usr/lib/ganglia/modnet.so") }
   code <<-EOH
       cp gmond/modules/*/.libs/*.so /usr/lib/ganglia/
       chmod ug+rwx /usr/lib/ganglia/*.so
