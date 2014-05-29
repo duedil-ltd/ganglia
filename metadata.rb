@@ -1,3 +1,4 @@
+name             "ganglia"
 maintainer       "DueDil Ltd"
 maintainer_email "tom@duedil.com"
 
